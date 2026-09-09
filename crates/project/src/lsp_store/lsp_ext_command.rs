@@ -827,6 +827,52 @@ impl LspCommand for GetLspRunnables {
     }
 }
 
+#[derive(Deserialize, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PeekDocumentsResult {
+    pub success: bool,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PeekDocumentsParams {
+    pub uri: lsp::Uri,
+    pub position: lsp::Position,
+    pub locations: Vec<lsp::Uri>,
+}
+
+pub enum LspExtPeekDocuments {}
+
+impl lsp::request::Request for LspExtPeekDocuments {
+    type Params = PeekDocumentsParams;
+
+    type Result = PeekDocumentsResult;
+
+    const METHOD: &'static str = "workspace/peekDocuments";
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GetReferenceDocumentResult {
+    pub content: String,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GetReferenceDocumentParams {
+    pub uri: lsp::Uri,
+}
+
+pub enum LspExtGetReferenceDocument {}
+
+impl lsp::request::Request for LspExtGetReferenceDocument {
+    type Params = GetReferenceDocumentParams;
+
+    type Result = GetReferenceDocumentResult;
+
+    const METHOD: &'static str = "workspace/getReferenceDocument";
+}
+
 #[derive(Debug)]
 pub struct LspExtCancelFlycheck {}
 

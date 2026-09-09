@@ -435,6 +435,11 @@ pub enum Event {
     BufferEdited {
         source: BufferEditSource,
     },
+    PeekDocuments {
+        server_id: LanguageServerId,
+        buffer_id: BufferId,
+        expansions: Vec<(Range<lsp::Position>, String)>,
+    },
 }
 
 pub struct AgentLocationChanged;
@@ -3850,6 +3855,34 @@ impl Project {
             }
             LspStoreEvent::WorkspaceEditApplied(transaction) => {
                 cx.emit(Event::WorkspaceEditApplied(transaction.clone()))
+            }
+            LspStoreEvent::PeekDocuments {
+                server_id,
+                uri,
+                expansions,
+            } => {
+                if let Some(buffer_id) = uri
+                    .to_file_path()
+                    .ok()
+                    .and_then(|path| self.project_path_for_absolute_path(&path, cx))
+                    .and_then(|path| {
+                        self.buffer_store
+                            .read(cx)
+                            .buffer_id_for_project_path(&path)
+                            .copied()
+                    })
+                {
+                    log::info!(
+                        "peekDocuments: {} expansion(s) for {:?}",
+                        expansions.len(),
+                        buffer_id
+                    );
+                    cx.emit(Event::PeekDocuments {
+                        server_id: *server_id,
+                        buffer_id,
+                        expansions: expansions.clone(),
+                    })
+                }
             }
         }
     }

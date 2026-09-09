@@ -43,6 +43,10 @@ use crate::{
         self,
         folding_ranges::FoldingRangeData,
         log_store::{GlobalLogStore, LanguageServerKind},
+        lsp_ext_command::{
+            GetReferenceDocumentParams, LspExtGetReferenceDocument, LspExtPeekDocuments,
+            PeekDocumentsResult,
+        },
         semantic_tokens::{SemanticTokenConfig, SemanticTokensData},
     },
     manifest_tree::{
@@ -1238,6 +1242,75 @@ impl LocalLspStore {
                         } else {
                             Ok(None)
                         }
+                    }
+                }
+            })
+            .detach();
+        language_server
+            .on_request::<LspExtPeekDocuments, _, _>({
+                fn first_level_expansion_range(uri: &lsp::Uri) -> Option<Range<lsp::Position>> {
+                    if uri.scheme() != "sourcekit-lsp"
+                        || uri.host_str() != Some("swift-macro-expansion")
+                    {
+                        return None;
+                    }
+                    let parent = uri.query_pairs().find(|(k, _)| k == "parent")?.1;
+                    if url::Url::parse(&parent).ok()?.scheme() != "file" {
+                        return None; // nested expansion
+                    }
+                    let name = uri.path_segments()?.next_back()?.strip_suffix(".swift")?;
+                    let (start, end) = name.split_once('-')?;
+                    Some(parse_position(start)?..parse_position(end)?) // "L3C7" -> Position { 2, 6 }
+                }
+                fn parse_position(s: &str) -> Option<lsp::Position> {
+                    let mut split = s.strip_prefix('L')?.split('C');
+                    let line = split.next()?.parse::<u32>().ok()?.checked_sub(1)?;
+                    let character = split.next()?.parse::<u32>().ok()?.checked_sub(1)?;
+                    if split.next().is_some() {
+                        return None;
+                    }
+                    Some(lsp::Position::new(line, character))
+                }
+
+                let this = lsp_store.clone();
+                move |params, cx| {
+                    let this = this.clone();
+                    let mut cx = cx.clone();
+                    async move {
+                        let Some(server) =
+                            this.update(&mut cx, |this, _| this.language_server_for_id(server_id))?
+                        else {
+                            return Ok(PeekDocumentsResult { success: false });
+                        };
+
+                        let mut expansions = Vec::new();
+                        for location in &params.locations {
+                            let Some(edit_range) = first_level_expansion_range(location) else {
+                                continue;
+                            };
+                            let content = server
+                                .request::<LspExtGetReferenceDocument>(
+                                    GetReferenceDocumentParams {
+                                        uri: location.clone(),
+                                    },
+                                    DEFAULT_LSP_REQUEST_TIMEOUT,
+                                )
+                                .await
+                                .into_response()?
+                                .content;
+                            if !content.is_empty() {
+                                expansions.push((edit_range, content));
+                            }
+                        }
+                        let success = !expansions.is_empty();
+                        this.update(&mut cx, |_, cx| {
+                            cx.emit(LspStoreEvent::PeekDocuments {
+                                server_id,
+                                uri: params.uri,
+                                expansions,
+                            })
+                        })?;
+                        Ok(PeekDocumentsResult { success })
                     }
                 }
             })
@@ -4643,6 +4716,11 @@ pub enum LspStoreEvent {
         most_recent_edit: clock::Lamport,
     },
     WorkspaceEditApplied(ProjectTransaction),
+    PeekDocuments {
+        server_id: LanguageServerId,
+        uri: lsp::Uri,
+        expansions: Vec<(Range<lsp::Position>, String)>,
+    },
 }
 
 #[derive(Clone, Debug, Serialize)]
