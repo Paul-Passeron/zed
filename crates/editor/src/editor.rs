@@ -47,6 +47,7 @@ mod selections_collection;
 pub mod semantic_tokens;
 mod split;
 pub mod split_editor_view;
+mod swift_ext;
 
 mod bookmarks;
 #[cfg(test)]
@@ -2190,6 +2191,16 @@ impl Editor {
                                 cx,
                             );
                         }
+                    }
+
+                    project::Event::PeekDocuments {
+                        buffer_id,
+                        expansions,
+                        ..
+                    } => {
+                        swift_ext::show_inline_expansions(
+                            editor, *buffer_id, expansions, window, cx,
+                        );
                     }
 
                     _ => {}
