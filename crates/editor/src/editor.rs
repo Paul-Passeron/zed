@@ -3500,6 +3500,10 @@ impl Editor {
             cx.notify();
             return;
         }
+        if swift_ext::clear_inline_expansions(self, cx) {
+            cx.notify();
+            return;
+        }
         if self.clear_expanded_diff_hunks(cx) {
             cx.notify();
             return;

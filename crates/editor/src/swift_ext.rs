@@ -1,24 +1,12 @@
-use std::{fs, mem, ops::Range, path::Path, sync::Arc};
-
 use crate::{
-    Addon, CancelFlycheck, ClearFlycheck, Editor, EditorMode, ExpandMacroRecursively, GoToParentModule, GotoDefinitionKind, OpenDocs, RunFlycheck, display_map::{BlockPlacement, BlockProperties, BlockStyle, CustomBlockId}, element::register_action, hover_links::HoverLink, lsp_ext::find_specific_language_server_in_selection,
+    Addon, Editor,
+    display_map::{BlockPlacement, BlockProperties, BlockStyle, CustomBlockId},
 };
-use anyhow::Context as _;
-use gpui::{App, AppContext as _, Context, Entity, TaskExt, Window};
-use language::{Capability, Language, proto::serialize_anchor};
-use multi_buffer::ToOffset;
+use gpui::{AppContext, Context, Window};
 use multi_buffer::{MultiBuffer, MultiBufferOffset};
-use project::{
-    ProjectItem,
-    lsp_command::location_link_from_proto,
-    lsp_store::{
-        lsp_ext_command::{DocsUrls, ExpandMacro, ExpandedMacro},
-        rust_analyzer_ext::{RUST_ANALYZER_NAME, cancel_flycheck, clear_flycheck, run_flycheck},
-    },
-};
-use rpc::proto;
 use settings::SoftWrap;
-use text::{BufferId, ToOffset as _, ToPointUtf16};
+use std::{mem, ops::Range, sync::Arc};
+use text::{BufferId, ToOffset};
 use ui::{InteractiveElement, IntoElement, ParentElement, Styled, div};
 
 pub struct InlineExpansions {
@@ -53,12 +41,8 @@ pub fn show_inline_expansions(
         return;
     };
     let language = buffer.read(cx).language().cloned();
-    let existing = editor
-        .addon_mut::<InlineExpansions>()
-        .map(|addon| mem::take(&mut addon.blocks))
-        .unwrap_or_default();
-    if !existing.is_empty() {
-        editor.remove_blocks(existing.into_iter().collect(), None, cx);
+
+    if clear_inline_expansions(editor, cx) {
         return;
     }
 
@@ -108,4 +92,16 @@ pub fn show_inline_expansions(
 
     let ids = editor.insert_blocks(blocks, None, cx);
     editor.register_addon(InlineExpansions { blocks: ids });
+}
+
+pub(super) fn clear_inline_expansions(editor: &mut Editor, cx: &mut Context<Editor>) -> bool {
+    let blocks = editor
+        .addon_mut::<InlineExpansions>()
+        .map(|addon| mem::take(&mut addon.blocks))
+        .unwrap_or_default();
+    if blocks.is_empty() {
+        return false;
+    }
+    editor.remove_blocks(blocks.into_iter().collect(), None, cx);
+    true
 }
